@@ -1,0 +1,319 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+//
+// ==============================
+// ENUMS
+// ==============================
+
+enum UserRole {
+  patient
+  doctor
+}
+
+enum Gender {
+  male
+  female
+  other
+}
+
+enum RelationType {
+  self
+  spouse
+  child
+  parent
+}
+
+enum SessionType {
+  morning
+  evening
+}
+
+enum ConsultingType {
+  regular
+  online
+}
+
+enum VisitType {
+  first_time
+  report
+  follow_up
+  family
+}
+
+enum ComplaintType {
+  fever
+  cold
+  stomach_pain
+  headache
+  other
+}
+
+enum AppointmentStatus {
+  confirmed
+  cancelled
+  rescheduled
+  completed
+  failed
+}
+
+enum BookingSource {
+  app
+  ivr
+}
+
+enum RescheduleStatus {
+  pending
+  approved
+  rejected
+}
+
+enum PaymentStatus {
+  pending
+  paid
+  failed
+}
+
+enum PaymentMethod {
+  upi
+  card
+  cash
+}
+
+//
+// ==============================
+// USER (AUTH BASE)
+// ==============================
+
+model User {
+  user_id       String   @id @default(uuid())
+  full_name     String
+  phone         String   @unique
+  password_hash String
+  role          UserRole
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  patient       Patient?
+  doctor        Doctor?
+
+  sentChats     Chat[]   @relation("SentChats")
+  receivedChats Chat[]   @relation("ReceivedChats")
+  notifications Notification[]
+}
+
+//
+// ==============================
+// PATIENT
+// ==============================
+
+model Patient {
+  patient_id      String  @id @default(uuid())
+  user_id         String  @unique
+  age             Int
+  gender          Gender
+  weight          Decimal?
+  blood_group     String?
+  medical_history String?
+
+  user            User       @relation(fields: [user_id], references: [user_id])
+  dependents      Dependent[]
+  appointments    Appointment[]
+}
+
+//
+// ==============================
+// DEPENDENTS
+// ==============================
+
+model Dependent {
+  dependent_id String @id @default(uuid())
+  patient_id   String
+  name         String
+  age          Int
+  gender       Gender
+  relation     RelationType
+
+  patient      Patient       @relation(fields: [patient_id], references: [patient_id])
+  appointments Appointment[]
+}
+
+//
+// ==============================
+// DOCTOR
+// ==============================
+
+model Doctor {
+  doctor_id          String   @id @default(uuid())
+  user_id            String   @unique
+  specialization     String
+  qualification      String
+  experience_years   Int
+  bio                String?
+  clinic_address     String
+  consultation_fee   Decimal
+  availability_status Boolean
+
+  user          User            @relation(fields: [user_id], references: [user_id])
+  services      DoctorService[]
+  slots         AvailableSlot[]
+  appointments  Appointment[]
+}
+
+//
+// ==============================
+// DOCTOR SERVICES
+// ==============================
+
+model DoctorService {
+  service_id   String @id @default(uuid())
+  doctor_id    String
+  service_name String
+  description  String?
+
+  doctor       Doctor @relation(fields: [doctor_id], references: [doctor_id])
+}
+
+//
+// ==============================
+// AVAILABLE SLOTS
+// ==============================
+
+model AvailableSlot {
+  slot_id     String      @id @default(uuid())
+  doctor_id   String
+  date        DateTime
+  day_of_week String
+  session     SessionType
+  start_time  DateTime
+  end_time    DateTime
+  is_booked   Boolean     @default(false)
+
+  doctor      Doctor       @relation(fields: [doctor_id], references: [doctor_id])
+  appointment Appointment?
+}
+
+//
+// ==============================
+// APPOINTMENTS
+// ==============================
+
+model Appointment {
+  appointment_id   String             @id @default(uuid())
+  doctor_id        String
+  patient_id       String
+  dependent_id     String?
+  slot_id          String
+  token_no         Int
+  consulting_type  ConsultingType
+  visit_type       VisitType
+  complaint        ComplaintType
+  is_time_confirmed Boolean
+  status           AppointmentStatus
+  booking_source   BookingSource
+  scheduled_on     DateTime
+  cancellation_reason String?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  doctor       Doctor        @relation(fields: [doctor_id], references: [doctor_id])
+  patient      Patient       @relation(fields: [patient_id], references: [patient_id])
+  dependent    Dependent?    @relation(fields: [dependent_id], references: [dependent_id])
+  slot         AvailableSlot @relation(fields: [slot_id], references: [slot_id])
+
+  reschedules  RescheduleRequest[]
+  chats        Chat[]
+  payments     Payment[]
+  reviews      Review[]
+}
+
+//
+// ==============================
+// RESCHEDULE REQUEST
+// ==============================
+
+model RescheduleRequest {
+  reschedule_id   String            @id @default(uuid())
+  appointment_id  String
+  requested_date  DateTime
+  requested_time  DateTime
+  status          RescheduleStatus
+  created_at      DateTime @default(now())
+
+  appointment     Appointment @relation(fields: [appointment_id], references: [appointment_id])
+}
+
+//
+// ==============================
+// CHAT
+// ==============================
+
+model Chat {
+  chat_id        String   @id @default(uuid())
+  appointment_id String
+  sender_id      String
+  receiver_id    String
+  message        String
+  sent_at        DateTime @default(now())
+
+  appointment Appointment @relation(fields: [appointment_id], references: [appointment_id])
+  sender      User        @relation("SentChats", fields: [sender_id], references: [user_id])
+  receiver    User        @relation("ReceivedChats", fields: [receiver_id], references: [user_id])
+}
+
+//
+// ==============================
+// PAYMENTS
+// ==============================
+
+model Payment {
+  payment_id     String        @id @default(uuid())
+  appointment_id String
+  amount         Decimal
+  payment_status PaymentStatus
+  payment_method PaymentMethod
+  paid_at        DateTime?
+
+  appointment Appointment @relation(fields: [appointment_id], references: [appointment_id])
+}
+
+//
+// ==============================
+// REVIEWS
+// ==============================
+
+model Review {
+  review_id              String   @id @default(uuid())
+  appointment_id         String   @unique
+  rating                 Int
+  consultation_rating    Int
+  facility_rating        Int
+  waiting_time_rating    Int
+  feedback               String?
+  created_at             DateTime @default(now())
+
+  appointment Appointment @relation(fields: [appointment_id], references: [appointment_id])
+}
+
+//
+// ==============================
+// NOTIFICATIONS
+// ==============================
+
+model Notification {
+  notification_id String   @id @default(uuid())
+  user_id         String
+  title           String
+  message         String
+  is_read         Boolean  @default(false)
+  created_at      DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [user_id])
+}
